@@ -1,4 +1,4 @@
-component displayName="TestBox xUnit suite for CF9" labels="railo,cf" extends="testbox.system.BaseSpec"{
+component displayName="TestBox xUnit suite for CF9" labels="lucee,cf" extends="testbox.system.BaseSpec"{
 
 /*********************************** LIFE CYCLE Methods ***********************************/
 
@@ -15,10 +15,17 @@ component displayName="TestBox xUnit suite for CF9" labels="railo,cf" extends="t
 	}
 
 	function teardown(){
-		structClear( request );
+		structDelete( request, "foo" );
 	}
 
 /*********************************** Test Methods ***********************************/
+
+	any function testFloatingPointNumberAddition() output="false" {
+		var sum = 196.4 + 196.4 + 180.8 + 196.4 + 196.4 + 180.8 + 609.6;
+		// sum.toString() outputs: 1756.8000000000002
+		//debug( sum );
+		//$assert.isEqual( sum, 1756.8 );
+	}
 
 	function testIncludes(){
 		$assert.includes( "hello", "HE" );
@@ -59,8 +66,8 @@ component displayName="TestBox xUnit suite for CF9" labels="railo,cf" extends="t
 		$assert.fail( "This Test should fail" );
 	}
 
-	boolean function isRailo(){
-		return structKeyExists( server, "railo" );
+	boolean function isLucee(){
+		return structKeyExists( server, "lucee" );
 	}
 
 	function testThatShouldFail(){
@@ -125,6 +132,32 @@ component displayName="TestBox xUnit suite for CF9" labels="railo,cf" extends="t
 		$assert.isEqual( "hello", "HEllO" );
 		$assert.isEqual( [], [] );
 		$assert.isEqual( [1,2,3, {name="hello", test="this"} ], [1,2,3, {test="this", name="hello"} ] );
+	}
+	
+	function testIsEqualQuery() {
+
+		var a = '';
+		var b = '';
+		var testQuery = queryNew("column_a,column_b");
+		queryAddRow(testQuery);
+		querySetCell(testQuery,'column_a','1');
+		querySetCell(testQuery,'column_b','2');
+		
+		a = new Query(
+				sql = "SELECT column_a ,column_b
+						FROM testQuery",
+				dbtype = "query",
+				testQuery = testQuery
+			).execute().getResult();
+		
+		b = new Query(
+				sql = "SELECT column_b ,column_a
+						FROM testQuery",
+				dbtype = "query",
+				testQuery = testQuery
+			).execute().getResult(); 
+		
+		$assert.isEqual(a, b);
 	}
 
 	function testisNotEqual() {

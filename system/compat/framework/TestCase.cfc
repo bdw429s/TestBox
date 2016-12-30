@@ -1,4 +1,7 @@
 /**
+* Copyright Since 2005 TestBox Framework by Luis Majano and Ortus Solutions, Corp
+* www.ortussolutions.com
+* ---
 * This is the TestBox MXUnit compatible object. You can use this object as a direct replacement
 * To MXUnit BaseTest Case.
 * All assertions found in this object delegate to our core Assertion object.
@@ -9,7 +12,7 @@ component extends="testbox.system.BaseSpec"{
 	this.$exceptionAnnotation	= "mxunit:expectedException";
 
 /*********************************** LIFE-CYCLE Methods ***********************************/
-	
+
 	// Added signatures for backwards compat
 	function init(){ return this; }
 	function setup(){}
@@ -28,7 +31,7 @@ component extends="testbox.system.BaseSpec"{
 	remote function runTestRemote(any testMethod="", boolean debug=false, output="simple") output=true{
 
 		switch( arguments.output ){
-			case "junitxml" : { arguments.output = "junit"; break; } 
+			case "junitxml" : { arguments.output = "junit"; break; }
 			case "query" 	: case "array" : { arguments.output = "raw"; break; }
 			case "html" 	: { arguments.output = "simple"; break; }
 			default 		: { arguments.output = "simple"; }
@@ -49,7 +52,7 @@ component extends="testbox.system.BaseSpec"{
 	function addAssertDecorator( required string decoratorName ){
 		var oDecorator = new "#arguments.decoratorName#"();
 		var aFunctions = getMetadata( oDecorator ).functions;
-		
+
 		// iterate and add
 		for( var x=1; x lte arrayLen( aFunctions ); x++ ){
 			var thisFunction = aFunctions[ x ];
@@ -62,8 +65,8 @@ component extends="testbox.system.BaseSpec"{
 		return this;
 	}
 
-	function setMockingFramework(){ 
-		// does nothing, we always use MockBox 
+	function setMockingFramework(){
+		// does nothing, we always use MockBox
 	}
 
 	function getMockFactory(){
@@ -77,8 +80,9 @@ component extends="testbox.system.BaseSpec"{
 	/**
 	* MXUnit style debug
 	* @var.hint The variable to debug
+	* @label.hint The label to add to the debug entry
 	*/
-	function debug( required var ){
+	function debug( required var, string label="" ){
 		arguments.deepCopy = true;
 		super.debug( argumentCollection=arguments );
 	}
@@ -95,16 +99,16 @@ component extends="testbox.system.BaseSpec"{
 	/**
 	* Injects properties into the receiving object
 	*/
-	any function injectProperty( 
-		required any receiver, 
-		required string propertyName, 
+	any function injectProperty(
+		required any receiver,
+		required string propertyName,
 		required any propertyValue,
 		string scope="variables"
 	){
 		// Mock it baby
 		getMockBox().prepareMock( arguments.receiver )
-			.$property( propertyName=arguments.propertyName, 
-						propertyScope=arguments.scope, 
+			.$property( propertyName=arguments.propertyName,
+						propertyScope=arguments.scope,
 						mock=arguments.propertyValue );
 
 		return arguments.receiver;
@@ -113,25 +117,44 @@ component extends="testbox.system.BaseSpec"{
 	/**
 	* injects the method from giver into receiver. This is helpful for quick and dirty mocking
 	*/
-	any function injectMethod( 
-		required any receiver, 
-		required any giver, 
+	any function injectMethod(
+		required any receiver,
+		required any giver,
 		required string functionName,
 		string functionNameInReceiver="#arguments.functionName#"
 	){
 		// Mock it baby
 		getMockBox().prepareMock( arguments.giver );
-		
+		getMockBox().prepareMock( arguments.receiver );
+
 		// inject it.
 		if( structkeyexists( arguments.giver, arguments.functionName ) ){
-			arguments.receiver[ arguments.functionNameInReceiver ] = arguments.giver.$getProperty( name=arguments.functionName, scope="this" );
+			arguments.receiver.$property(
+				propertyName 	= arguments.functionNameInReceiver,
+				propertyScope 	= "this",
+				mock 			= arguments.giver.$getProperty( name=arguments.functionName, scope="this" )
+			);
+			arguments.receiver.$property(
+				propertyName 	= arguments.functionNameInReceiver,
+				propertyScope 	= "variables",
+				mock 			= arguments.giver.$getProperty( name=arguments.functionName, scope="this" )
+			);
 		} else {
-			arguments.receiver[ arguments.functionNameInReceiver ] = arguments.giver.$getProperty( name=arguments.functionName, scope="variables" );
+			arguments.receiver.$property(
+				propertyName 	= arguments.functionNameInReceiver,
+				propertyScope 	= "this",
+				mock 			= arguments.giver.$getProperty( name=arguments.functionName, scope="variables" )
+			);
+			arguments.receiver.$property(
+				propertyName 	= arguments.functionNameInReceiver,
+				propertyScope 	= "variables",
+				mock 			= arguments.giver.$getProperty( name=arguments.functionName, scope="variables" )
+			);
 		}
-		
+
 		return arguments.receiver;
 	}
-	
+
 /*********************************** ASSERTION METHODS ***********************************/
 
 	/**
@@ -186,7 +209,7 @@ component extends="testbox.system.BaseSpec"{
 
 	/**
 	* Assert that an expected and actual objec is NOT the same instance
-	* This only works on objects that are passed by reference, please remember that in Railo
+	* This only works on objects that are passed by reference, please remember that in Lucee
 	* arrays pass by reference and in Adobe CF they pass by value.
 	*/
 	function assertNotSame( required expected, required actual, message="" ){
@@ -202,7 +225,7 @@ component extends="testbox.system.BaseSpec"{
 
 	/**
 	* Assert that an expected and actual objec is the same instance
-	* This only works on objects that are passed by reference, please remember that in Railo
+	* This only works on objects that are passed by reference, please remember that in Lucee
 	* arrays pass by reference and in Adobe CF they pass by value.
 	*/
 	function assertSame( required expected, required actual, message="" ){
@@ -303,12 +326,12 @@ component extends="testbox.system.BaseSpec"{
 	/**
 	* Assert that the passed in actual number or date is expected to be close to it within +/- a passed delta and optional datepart
 	*/
-	function assertEqualsWithTolerance( 
-		required expected, 
-		required actual, 
-		required numeric tolerance, 
+	function assertEqualsWithTolerance(
+		required expected,
+		required actual,
+		required numeric tolerance,
 		datePart="",
-		message="" 
+		message=""
 	){
 		this.$assert.closeTo( arguments.expected, arguments.actual, arguments.tolerance, arguments.datePart, arguments.message );
 	}

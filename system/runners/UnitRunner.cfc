@@ -1,23 +1,26 @@
 /**
-********************************************************************************
-Copyright 2005-2009 ColdBox Framework by Luis Majano and Ortus Solutions, Corp
-www.coldbox.org | www.luismajano.com | www.ortussolutions.com
-********************************************************************************
+* Copyright Since 2005 TestBox Framework by Luis Majano and Ortus Solutions, Corp
+* www.ortussolutions.com
+* ---
 * This TestBox runner is used to run and report on xUnit style test suites.
-*/ 
+*/
 component extends="testbox.system.runners.BaseRunner" implements="testbox.system.runners.IRunner" accessors="true"{
 
 	// runner options
 	property name="options";
+	// testbox reference
+	property name="testbox";
 
 	/**
 	* Constructor
 	* @options.hint The options for this runner
+	* @testbox.hint The TestBox class reference
 	*/
-	function init( required struct options ){
+	function init( required struct options, required testBox ){
 
 		variables.options = arguments.options;
-		
+		variables.testbox = arguments.testbox;
+
 		return this;
 	}
 
@@ -25,16 +28,18 @@ component extends="testbox.system.runners.BaseRunner" implements="testbox.system
 	* Execute a BDD test on the incoming target and store the results in the incoming test results
 	* @target.hint The target bundle CFC to test
 	* @testResults.hint The test results object to keep track of results for this test case
+	* @callbacks A struct of listener callbacks or a CFC with callbacks for listening to progress of the testing: onBundleStart,onBundleEnd,onSuiteStart,onSuiteEnd,onSpecStart,onSpecEnd
 	*/
-	any function run( 
+	any function run(
 		required any target,
-		required testbox.system.TestResult testResults 
+		required testbox.system.TestResult testResults,
+		required callbacks
 	){
 
 		// Get target information
 		var targetMD 	= getMetadata( arguments.target );
 		var bundleName 	= ( structKeyExists( targetMD, "displayName" ) ? targetMD.displayname : targetMD.name );
-		
+
 		// Discover the test suite data to use for testing
 		var testSuites 		= getTestSuites( arguments.target, targetMD, arguments.testResults );
 		var testSuitesCount = arrayLen( testSuites );
@@ -47,18 +52,60 @@ component extends="testbox.system.runners.BaseRunner" implements="testbox.system
 			try{
 				// execute beforeAll(), beforeTests() for this bundle, no matter how many suites they have.
 				if( structKeyExists( arguments.target, "beforeAll" ) ){ arguments.target.beforeAll(); }
+
+				// find any methods annotated 'beforeAll' and execute them
+				var beforeAllAnnotationMethods = variables.testbox.getUtility().getAnnotatedMethods(
+					annotation = "beforeAll",
+					metadata   = getMetadata( arguments.target )
+				);
+
+				for ( var beforeAllMethod in beforeAllAnnotationMethods ){
+					// We use evalute here for two reasons:
+					// 1. We want the scopes to be the target class, not this one.
+					// 2. We want this code to be cross-platform ( hence no cfinvoke() )
+					Evaluate( "arguments.target.#beforeAllMethod.name#()" );
+				}
+
 				if( structKeyExists( arguments.target, "beforeTests" ) ){ arguments.target.beforeTests(); }
-				
+
 				// Iterate over found test suites and test them, if nested suites, then this will recurse as well.
 				for( var thisSuite in testSuites ){
-					testSuite( target=arguments.target, 
-							   suite=thisSuite, 
-							   testResults=arguments.testResults,
-							   bundleStats=bundleStats );
+					// verify call backs
+					if( structKeyExists( arguments.callbacks, "onSuiteStart" ) ){
+						arguments.callbacks.onSuiteStart( arguments.target, arguments.testResults, thisSuite );
+					}
+
+					// Execute Suite
+					testSuite(
+						target=arguments.target,
+						suite=thisSuite,
+						testResults=arguments.testResults,
+						bundleStats=bundleStats,
+						callbacks=arguments.callbacks
+					);
+
+					// verify call backs
+					if( structKeyExists( arguments.callbacks, "onSuiteEnd" ) ){
+						arguments.callbacks.onSuiteEnd( arguments.target, arguments.testResults, thisSuite );
+					}
 				}
 
 				// execute afterAll(), afterTests() for this bundle, no matter how many suites they have.
 				if( structKeyExists( arguments.target, "afterAll" ) ){ arguments.target.afterAll(); }
+
+				// find any methods annotated 'afterAll' and execute them
+				var afterAllAnnotationMethods = variables.testbox.getUtility().getAnnotatedMethods(
+					annotation = "afterAll",
+					metadata   = getMetadata( arguments.target )
+				);
+
+				for ( var afterAllMethod in afterAllAnnotationMethods ){
+					// We use evalute here for two reasons:
+					// 1. We want the scopes to be the target class, not this one.
+					// 2. We want this code to be cross-platform ( hence no cfinvoke() )
+					Evaluate( "arguments.target.#afterAllMethod.name#()" );
+				}
+
 				if( structKeyExists( arguments.target, "afterTests" ) ){ arguments.target.afterTests(); }
 			} catch(Any e) {
 				bundleStats.globalException = e;
@@ -71,29 +118,31 @@ component extends="testbox.system.runners.BaseRunner" implements="testbox.system
 
 		// finalize the bundle stats
 		arguments.testResults.endStats( bundleStats );
-		
+
 		return this;
 	}
 
 	/************************************** TESTING METHODS *********************************************/
-	
+
 	/**
 	* Test the incoming suite definition
 	* @target.hint The target bundle CFC
 	* @method.hint The method definition to test
 	* @testResults.hint The testing results object
 	* @bundleStats.hint The bundle stats this suite belongs to
+	* @callbacks The CFC or struct of callback listener methods
 	*/
 	private function testSuite(
 		required target,
 		required suite,
 		required testResults,
-		required bundleStats
+		required bundleStats,
+		required callbacks={}
 	){
 
 		// Start suite stats
 		var suiteStats 	= arguments.testResults.startSuiteStats( arguments.suite.name, arguments.bundleStats );
-		
+
 		// Record bundle + suite + global initial stats
 		suiteStats.totalSpecs 	= arrayLen( arguments.suite.specs );
 		arguments.bundleStats.totalSpecs += suiteStats.totalSpecs;
@@ -103,8 +152,8 @@ component extends="testbox.system.runners.BaseRunner" implements="testbox.system
 			.incrementSpecs( suiteStats.totalSpecs );
 
 		// Verify we can execute the incoming suite via skipping or labels
-		if( !arguments.suite.skip && 
-			canRunLabel( arguments.suite.labels, arguments.testResults ) && 
+		if( !arguments.suite.skip &&
+			canRunLabel( arguments.suite.labels, arguments.testResults ) &&
 			canRunSuite( arguments.suite, arguments.testResults )
 		){
 
@@ -117,35 +166,63 @@ component extends="testbox.system.runners.BaseRunner" implements="testbox.system
 
 			// iterate over suite specs and test them
 			for( var thisSpec in arguments.suite.specs ){
-				
+
 				// is this async or not?
 				if( arguments.suite.asyncAll ){
-					// prepare thread names
-					var thisThreadName = "tb-suite-#hash( thisSpec.name )#";
+					// prepare thread name
+					var thisThreadName = variables.testBox.getUtility().slugify( "tb-" & thisSpec.name & "-#createUUID()#" );
+					// append to used thread names
 					arrayAppend( threadNames, thisThreadName );
 					// thread it
-					thread name="#thisThreadName#" thisSpec="#thisSpec#" suite="#arguments.suite#" threadName="#thisThreadName#"{
-						// execute the test within the context of the spec target due to railo closure bug, move back once it is resolved.
-						thread.target.runTestMethod( spec=attributes.thisSpec, 
-										  	   		 testResults=thread.testResults, 
-						  				  	   		 suiteStats=thread.suiteStats,
-						  				  	   		 runner=this );
-				
+					thread  name="#thisThreadName#"
+							thisSpec="#thisSpec#"
+							suite="#arguments.suite#"
+							threadName="#thisThreadName#"{
+
+						// verify call backs
+						if( structKeyExists( attributes.callbacks, "onSpecStart" ) ){
+							attributes.callbacks.onSpecStart( thread.target, thread.testResults, thread.suiteStats, attributes.thisSpec );
+						}
+
+						// execute the test within the context of the spec target due to lucee closure bug, move back once it is resolved.
+						thread.target.runTestMethod(
+							spec=attributes.thisSpec,
+							testResults=thread.testResults,
+							suiteStats=thread.suiteStats,
+							runner=this
+						);
+
+						// verify call backs
+						if( structKeyExists( attributes.callbacks, "onSpecEnd" ) ){
+							attributes.callbacks.onSpecEnd( thread.target, thread.testResults, thread.suiteStats, attributes.thisSpec );
+						}
 					}
 
 				} else {
-					// execute the test within the context of the spec target due to railo closure bug, move back once it is resolved.
-					thread.target.runTestMethod( spec=thisSpec,
-								  		   		 testResults=thread.testResults, 
-								  		   		 suiteStats=thread.suiteStats,
-								  		   		 runner=this );
+					// verify call backs
+					if( structKeyExists( arguments.callbacks, "onSpecStart" ) ){
+						arguments.callbacks.onSpecStart( arguments.target, arguments.testResults, thread.suiteStats, thisSpec );
+					}
+
+					// execute the test within the context of the spec target due to lucee closure bug, move back once it is resolved.
+					thread.target.runTestMethod(
+						spec=thisSpec,
+						testResults=thread.testResults,
+						suiteStats=thread.suiteStats,
+						runner=this
+					);
+
+					// verify call backs
+					if( structKeyExists( arguments.callbacks, "onSpecEnd" ) ){
+						arguments.callbacks.onSpecEnd( arguments.target, arguments.testResults, thread.suiteStats, thisSpec );
+					}
 				}
 
 			} // end loop over specs
 
 			// join threads if async
 			if( arguments.suite.asyncAll ){ thread action="join" name="#arrayToList( threadNames )#"{}; }
-			
+
 			// All specs finalized, set suite status according to spec data
 			if( suiteStats.totalError GT 0 ){ suiteStats.status = "Error"; }
 			else if( suiteStats.totalFail GT 0 ){ suiteStats.status = "Failed"; }
@@ -174,7 +251,7 @@ component extends="testbox.system.runners.BaseRunner" implements="testbox.system
 	* @targetMD.hint The metdata of the target
 	* @testResults.hint The test results object
 	*/
-	private array function getTestSuites( 
+	private array function getTestSuites(
 		required target,
 		required targetMD,
 		required testResults
@@ -210,11 +287,11 @@ component extends="testbox.system.runners.BaseRunner" implements="testbox.system
 	* Retrieve the testing methods/specs from a given target.
 	* @target.hint The target to get the methods from
 	*/
-	private array function getTestMethods( 
+	private array function getTestMethods(
 		required any target,
 		required any testResults
 	){
-	
+
 		var mResults = [];
 		var methodArray = structKeyArray( arguments.target );
 		var index = 1;
@@ -233,7 +310,7 @@ component extends="testbox.system.runners.BaseRunner" implements="testbox.system
 					order 		= ( structKeyExists( specMD, "order" ) ? listToArray( specMD.order ) : index++ ),
 					expectedException  = ( structKeyExists( specMD, "expectedException" ) ? specMD.expectedException : "" )
 				};
-				
+
 				// skip constraint?
 				if( !isBoolean( spec.skip ) && isCustomFunction( arguments.target[ spec.skip ] ) ){
 					spec.skip = evaluate( "arguments.target.#spec.skip#()" );

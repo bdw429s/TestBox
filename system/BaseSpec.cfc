@@ -1,11 +1,13 @@
 /**
-********************************************************************************
-Copyright 2005-2009 ColdBox Framework by Luis Majano and Ortus Solutions, Corp
-www.coldbox.org | www.luismajano.com | www.ortussolutions.com
-********************************************************************************
+* Copyright Since 2005 TestBox Framework by Luis Majano and Ortus Solutions, Corp
+* www.ortussolutions.com
+* ---
 * This is a base spec object that is used to test XUnit and BDD style specification methods
 */
 component{
+
+	// Param default URL method runner.
+	param name="url.method" default="runRemote";
 
 	// MockBox mocking framework
 	variables.$mockBox = this.$mockBox 	= new testbox.system.MockBox();
@@ -29,6 +31,8 @@ component{
 	this.$testID 				= createUUID();
 	// Debug buffer
 	this.$debugBuffer			= [];
+	// Current Executing Spec
+	this.$currentExecutingSpec 	= "";
 
 	/************************************** BDD & EXPECTATIONS METHODS *********************************************/
 
@@ -41,8 +45,8 @@ component{
 
 	/**
 	* Expect an exception from the testing spec
-	* @type.hint The type to expect
-	* @regex.hint Optional exception message regular expression to match, by default it matches .*
+	* @type The type to expect
+	* @regex Optional exception message regular expression to match, by default it matches .*
 	*/
 	function expectedException( type="", regex=".*" ){
 		this.$expectedException = arguments;
@@ -67,7 +71,7 @@ component{
 
 	/**
 	* This function is used for BDD test suites to store the beforeEach() function to execute for a test suite group
-	* @body.hint The closure function
+	* @body The closure function
 	*/
 	function beforeEach( required any body ){
 		this.$suitesReverseLookup[ this.$suiteContext ].beforeEach = arguments.body;
@@ -75,17 +79,25 @@ component{
 
 	/**
 	* This function is used for BDD test suites to store the afterEach() function to execute for a test suite group
-	* @body.hint The closure function
+	* @body The closure function
 	*/
 	function afterEach( required any body ){
 		this.$suitesReverseLookup[ this.$suiteContext ].afterEach = arguments.body;
 	}
 
 	/**
+	* This is used to surround a spec with your own closure code to provide a nice around decoration advice
+	* @body The closure function
+	*/
+	function aroundEach( required any body ){
+		this.$suitesReverseLookup[ this.$suiteContext ].aroundEach = arguments.body;
+	}
+
+	/**
 	* The way to describe BDD test suites in TestBox. The title is usually what you are testing or grouping of tests.
 	* The body is the function that implements the suite.
-	* @title.hint The name of this test suite
-	* @body.hint The closure that represents the test suite
+	* @title The name of this test suite
+	* @body The closure that represents the test suite
 	* @labels The list or array of labels this suite group belongs to
 	* @asyncAll If you want to parallelize the execution of the defined specs in this suite group.
 	* @skip A flag or a closure that tells TestBox to skip this suite group from testing if true. If this is a closure it must return boolean.
@@ -99,7 +111,7 @@ component{
 	){
 
 		// closure checks
-		if( !isClosure( arguments.body ) ){
+		if( !isClosure( arguments.body ) && !isCustomFunction( arguments.body ) ){
 			throw( type="TestBox.InvalidBody", message="The body of this test suite must be a closure and you did not give me one, what's up with that!" );
 		}
 
@@ -120,6 +132,8 @@ component{
 			beforeEach 	= variables.closureStub,
 			// the afterEach closure
 			afterEach 	= variables.closureStub,
+			// the aroundEach closure, init to empty to distinguish
+			aroundEach	= variables.aroundStub,
 			// the parent suite
 			parent 		= "",
 			// the parent ref
@@ -130,7 +144,11 @@ component{
 
 		// skip constraint for suite as a closure
 		if( isClosure( arguments.skip ) || isCustomFunction( arguments.skip ) ){
-			suite.skip = arguments.skip();
+			suite.skip = arguments.skip( title=arguments.title,
+										 body=arguments.body,
+										 labels=arguments.labels,
+										 asyncAll=arguments.asyncAll,
+										 suite=suite );
 		}
 
 		// Are we in a nested describe() block
@@ -179,25 +197,122 @@ component{
 	}
 
 	/**
+	* The way to describe BDD test suites in TestBox. The story is an alias for describe usually use when you are writing using Gherkin-esque language
+	* The body is the function that implements the suite.
+	* @story The name of this test suite
+	* @body The closure that represents the test suite
+	* @labels The list or array of labels this suite group belongs to
+	* @asyncAll If you want to parallelize the execution of the defined specs in this suite group.
+	* @skip A flag or a closure that tells TestBox to skip this suite group from testing if true. If this is a closure it must return boolean.
+	*/
+	any function story(
+		required string story,
+		required any body,
+		any labels=[],
+		boolean asyncAll=false,
+		any skip=false
+	){
+		return describe( argumentCollection=arguments, title="Story: " & arguments.story );
+	}
+
+	/**
+	* The way to describe BDD test suites in TestBox. The feature is an alias for describe usually use when you are writing in a Given-When-Then style
+	* The body is the function that implements the suite.
+	* @feature The name of this test suite
+	* @body The closure that represents the test suite
+	* @labels The list or array of labels this suite group belongs to
+	* @asyncAll If you want to parallelize the execution of the defined specs in this suite group.
+	* @skip A flag or a closure that tells TestBox to skip this suite group from testing if true. If this is a closure it must return boolean.
+	*/
+	any function feature(
+		required string feature,
+		required any body,
+		any labels=[],
+		boolean asyncAll=false,
+		any skip=false
+	){
+		return describe( argumentCollection=arguments, title="Feature: " & arguments.feature );
+	}
+
+	/**
+	* The way to describe BDD test suites in TestBox. The given is an alias for describe usually use when you are writing in a Given-When-Then style
+	* The body is the function that implements the suite.
+	* @feature The name of this test suite
+	* @body The closure that represents the test suite
+	* @labels The list or array of labels this suite group belongs to
+	* @asyncAll If you want to parallelize the execution of the defined specs in this suite group.
+	* @skip A flag or a closure that tells TestBox to skip this suite group from testing if true. If this is a closure it must return boolean.
+	*/
+	any function given(
+		required string given,
+		required any body,
+		any labels=[],
+		boolean asyncAll=false,
+		any skip=false
+	){
+		return describe( argumentCollection=arguments, title="Given " & arguments.given );
+	}
+
+	/**
+	* The way to describe BDD test suites in TestBox. The scenario is an alias for describe usually use when you are writing in a Given-When-Then style
+	* The body is the function that implements the suite.
+	* @feature The name of this test suite
+	* @body The closure that represents the test suite
+	* @labels The list or array of labels this suite group belongs to
+	* @asyncAll If you want to parallelize the execution of the defined specs in this suite group.
+	* @skip A flag or a closure that tells TestBox to skip this suite group from testing if true. If this is a closure it must return boolean.
+	*/
+	any function scenario(
+		required string scenario,
+		required any body,
+		any labels=[],
+		boolean asyncAll=false,
+		any skip=false
+	){
+		return describe( argumentCollection=arguments, title="Scenario: " & arguments.scenario );
+	}
+
+	/**
+	* The way to describe BDD test suites in TestBox. The when is an alias for scenario usually use when you are writing in a Given-When-Then style
+	* The body is the function that implements the suite.
+	* @feature The name of this test suite
+	* @body The closure that represents the test suite
+	* @labels The list or array of labels this suite group belongs to
+	* @asyncAll If you want to parallelize the execution of the defined specs in this suite group.
+	* @skip A flag or a closure that tells TestBox to skip this suite group from testing if true. If this is a closure it must return boolean.
+	*/
+	any function when(
+		required string when,
+		required any body,
+		any labels=[],
+		boolean asyncAll=false,
+		any skip=false
+	){
+		return describe( argumentCollection=arguments, title="When " & arguments.when );
+	}
+
+	/**
 	* The it() function describes a spec or a test in TestBox.  The body argument is the closure that implements
 	* the test which usually contains one or more expectations that test the state of the code under test.
-	* @title.hint The title of this spec
-	* @body.hint The closure that represents the test
+	* @title The title of this spec
+	* @body The closure that represents the test
 	* @labels The list or array of labels this spec belongs to
 	* @skip A flag or a closure that tells TestBox to skip this spec test from testing if true. If this is a closure it must return boolean.
+	* @data A struct of data you would like to bind into the spec so it can be later passed into the executing body function
 	*/
 	any function it(
 		required string title,
 		required any body,
 		any labels=[],
-		any skip=false
+		any skip=false,
+		struct data={}
 	){
 		// closure checks
-		if( !isClosure( arguments.body ) ){
+		if( !isClosure( arguments.body ) && !isCustomFunction( arguments.body ) ){
 			throw( type="TestBox.InvalidBody", message="The body of this test suite must be a closure and you did not give me one, what's up with that!" );
 		}
 
-		// Context checks
+		// context checks
 		if( !len( this.$suiteContext ) ){
 			throw( type="TestBox.InvalidContext", message="You cannot define a spec without a test suite! This it() must exist within a describe() body! Go fix it :)" );
 		}
@@ -212,13 +327,20 @@ component{
 			labels 		= ( isSimpleValue( arguments.labels ) ? listToArray( arguments.labels ) : arguments.labels ),
 			// the spec body
 			body 		= arguments.body,
-			// The order of execution
-			order 		= this.$specOrderIndex++
+			// the order of execution
+			order 		= this.$specOrderIndex++,
+			// the data binding
+			data 		= arguments.data
 		};
 
 		// skip constraint for suite as a closure
 		if( isClosure( arguments.skip ) || isCustomFunction( arguments.skip ) ){
-			spec.skip = arguments.skip();
+			spec.skip = arguments.skip(
+				title	= arguments.title,
+				body	= arguments.body,
+				labels	= arguments.labels,
+				spec	= spec
+			);
 		}
 
 		// Attach this spec to the incoming context array of specs
@@ -227,10 +349,31 @@ component{
 		return this;
 	}
 
+
+
+	/**
+	* The then() function describes a spec or a test in TestBox and is an alias for it.  The body argument is the closure that implements
+	* the test which usually contains one or more expectations that test the state of the code under test.
+	* @then The title of this spec
+	* @body The closure that represents the test
+	* @labels The list or array of labels this spec belongs to
+	* @skip A flag or a closure that tells TestBox to skip this spec test from testing if true. If this is a closure it must return boolean.
+	* @data A struct of data you would like to bind into the spec so it can be later passed into the executing body function
+	*/
+	any function then(
+		required string then,
+		required any body,
+		any labels=[],
+		any skip=false,
+		struct data={}
+	){
+		return it( argumentCollection=arguments, title="Then " & arguments.then );
+	}
+
 	/**
 	* This is a convenience method that makes sure the test suite is skipped from execution
-	* @title.hint The name of this test suite
-	* @body.hint The closure that represents the test suite
+	* @title The name of this test suite
+	* @body The closure that represents the test suite
 	* @labels The list or array of labels this suite group belongs to
 	* @asyncAll If you want to parallelize the execution of the defined specs in this suite group.
 	*/
@@ -246,14 +389,16 @@ component{
 
 	/**
 	* This is a convenience method that makes sure the test spec is skipped from execution
-	* @title.hint The title of this spec
-	* @body.hint The closure that represents the test
+	* @title The title of this spec
+	* @body The closure that represents the test
 	* @labels The list or array of labels this spec belongs to
+	* @data A struct of data you would like to bind into the spec so it can be later passed into the executing body function
 	*/
 	any function xit(
 		required string title,
 		required any body,
-		any labels=[]
+		any labels=[],
+		struct data={}
 	){
 		arguments.skip = true;
 		return it( argumentCollection=arguments );
@@ -261,7 +406,7 @@ component{
 
 	/**
 	* Start an expectation expression. This returns an instance of Expectation so you can work with its matchers.
-	* @actual.hint The actual value, it is not required as it can be null.
+	* @actual The actual value, it is not required as it can be null.
 	*/
 	Expectation function expect( any actual ){
 		// build an expectation
@@ -270,8 +415,7 @@ component{
 		// Store the actual data
 		if( !isNull( arguments.actual ) ){
 			oExpectation.actual = arguments.actual;
-		}
-		else{
+		} else {
 			oExpectation.actual = javacast( "null", "" );
 		}
 
@@ -285,9 +429,19 @@ component{
 		return oExpectation;
 	}
 
+    /**
+    * Start a collection expectation expression. This returns an instance of CollectionExpection
+    * so you can work with its collection-unrolling matches (delegating to Expection).
+    * @actual The actual value, it should be an array or a struct.
+    */
+    CollectionExpectation function expectAll( required any actual ){
+        var cExpectation = new CollectionExpectation( spec=this, assertions=this.$assert, collection=arguments.actual );
+        return cExpectation;
+    }
+
 	/**
 	* Add custom matchers to your expectations
-	* @matchers.hint The structure of custom matcher functions to register or a path or instance of a CFC containing all the matcher functions to register
+	* @matchers The structure of custom matcher functions to register or a path or instance of a CFC containing all the matcher functions to register
 	*/
 	function addMatchers( required any matchers ){
 		// register structure
@@ -320,7 +474,7 @@ component{
 
 	/**
 	* Add custom assertions to the $assert object
-	* @assertions.hint The structure of custom assertion functions to register or a path or instance of a CFC containing all the assertion functions to register
+	* @assertions The structure of custom assertion functions to register or a path or instance of a CFC containing all the assertion functions to register
 	*/
 	function addAssertions( required any assertions ){
 		// register structure
@@ -355,10 +509,10 @@ component{
 
 	/**
 	* Run a test remotely, only useful if the spec inherits from this class. Useful for remote executions.
-	* @testSuites.hint A list or array of suite names that are the ones that will be executed ONLY!
-	* @testSpecs.hint A list or array of test names that are the ones that will be executed ONLY!
-	* @reporter.hint The type of reporter to run the test with
-	* @labels.hint A list or array of labels to apply to the testing.
+	* @testSuites A list or array of suite names that are the ones that will be executed ONLY!
+	* @testSpecs A list or array of test names that are the ones that will be executed ONLY!
+	* @reporter The type of reporter to run the test with
+	* @labels A list or array of labels to apply to the testing.
 	*/
 	remote function runRemote(
 		string testSpecs="",
@@ -366,21 +520,25 @@ component{
 		string reporter="simple",
 		string labels=""
 	) output=true{
-		var runner = new testbox.system.TestBox( bundles="#getMetadata(this).name#",
-														 labels=arguments.labels,
-														 reporter=arguments.reporter );
-
+		// content type defaulted, to avoid dreaded wddx default
+		getPageContext().getResponse().setContentType( "text/html" );
+		// run tests
+		var runner = new testbox.system.TestBox(
+			bundles		= "#getMetadata(this).name#",
+			labels		= arguments.labels,
+			reporter	= arguments.reporter
+		);
 		// Produce report
 		writeOutput( runner.run( testSuites=arguments.testSuites, testSpecs=arguments.testSpecs ) );
 	}
 
 	/**
 	* Run a BDD test in this target CFC
-	* @spec.hint The spec definition to test
-	* @suite.hint The suite definition this spec belongs to
-	* @testResults.hint The testing results object
-	* @suiteStats.hint The suite stats that the incoming spec definition belongs to
-	* @runner.hint The runner calling this BDD test
+	* @spec The spec definition to test
+	* @suite The suite definition this spec belongs to
+	* @testResults The testing results object
+	* @suiteStats The suite stats that the incoming spec definition belongs to
+	* @runner The runner calling this BDD test
 	*/
 	function runSpec(
 		required spec,
@@ -408,13 +566,13 @@ component{
 				arguments.runner.canRunLabel( consolidatedLabels, arguments.testResults ) &&
 				arguments.runner.canRunSpec( arguments.spec.name, arguments.testResults )
 			){
-
+				// setup the current executing spec for debug purposes
+				this.$currentExecutingSpec = arguments.suite.slug & "/" & arguments.suite.name & "/" & arguments.spec.name;
 				// Run beforeEach closures
 				runBeforeEachClosures( arguments.suite, arguments.spec );
 
 				try{
-					// Execute the Spec body
-					arguments.spec.body();
+					runAroundEachClosures( arguments.suite, arguments.spec );
 				} catch( any e ){
 					rethrow;
 				} finally {
@@ -438,7 +596,8 @@ component{
 			// store spec status and debug data
 			specStats.status 		= "Failed";
 			specStats.failMessage 	= e.message;
-			specStats.failOrigin 	= e.tagContext;
+			specStats.failOrigin 	= sliceTagContext( e.tagContext );
+
 			// Increment recursive pass stats
 			arguments.testResults.incrementSpecStat( type="fail", stats=specStats );
 		}
@@ -447,6 +606,7 @@ component{
 			// store spec status and debug data
 			specStats.status 		= "Error";
 			specStats.error 		= e;
+			specStats.failOrigin 	= sliceTagContext( e.tagContext );
 			// Increment recursive pass stats
 			arguments.testResults.incrementSpecStat( type="error", stats=specStats );
 		}
@@ -460,6 +620,8 @@ component{
 
 	/**
 	* Execute the before each closures in order for a suite and spec
+	* @suite The suite definition
+	* @spec The spec definition
 	*/
 	BaseSpec function runBeforeEachClosures( required suite, required spec ){
 		var reverseTree = [];
@@ -469,6 +631,15 @@ component{
 		while( !isSimpleValue( parentSuite ) ){
 			arrayAppend( reverseTree, parentSuite.beforeEach );
 			parentSuite = parentSuite.parentRef;
+		}
+
+		var annotationMethods = this.$utility.getAnnotatedMethods(
+			annotation = "beforeEach",
+			metadata   = getMetadata( this )
+		);
+
+		for( var method in annotationMethods ){
+			arrayAppend( reverseTree, this[ method.name ] );
 		}
 
 		// Execute reverse tree
@@ -487,7 +658,126 @@ component{
 	}
 
 	/**
+	* Execute the around each closures in order for a suite and spec
+	* @suite The suite definition
+	* @spec The spec definition
+	*/
+	BaseSpec function runAroundEachClosures( required suite, required spec ){
+		var reverseTree = [
+			{
+				name 	= arguments.suite.name,
+				body 	= arguments.suite.aroundEach,
+				data 	= {},
+				labels 	= arguments.suite.labels,
+				order 	= 0,
+				skip 	= arguments.suite.skip
+			}
+		];
+
+		// do we have nested suites? If so, traverse the tree to build reverse execution map
+		var parentSuite = arguments.suite.parentRef;
+		while( !isSimpleValue( parentSuite ) ){
+			arrayAppend( reverseTree, {
+				name 	= parentSuite.name,
+				body 	= parentSuite.aroundEach,
+				data 	= {},
+				labels 	= parentSuite.labels,
+				order 	= 0,
+				skip 	= parentSuite.skip
+			} );
+			// go deep
+			parentSuite = parentSuite.parentRef;
+		}
+
+		var annotationMethods = this.$utility.getAnnotatedMethods(
+			annotation = "aroundEach",
+			metadata   = getMetadata( this )
+		);
+
+		for( var method in annotationMethods ){
+			arrayAppend( reverseTree, {
+				name 	= method.name,
+				body 	= this[method.name],
+				data 	= {},
+				labels 	= {},
+				order 	= 0,
+				skip 	= false
+			} );
+		}
+
+		// Sort the closures from the oldest parent down to the current spec
+		var correctOrderTree = [];
+		var treeLen = arrayLen( reverseTree );
+		if( treeLen gt 0 ){
+			for( var x = treeLen; x gte 1; x-- ){
+				arrayAppend( correctOrderTree, reverseTree[ x ] );
+			}
+		}
+
+		// Build a function that will execute down the tree
+		var specStack = generateAroundEachClosuresStack(
+			closures 	= correctOrderTree,
+			suite 		= arguments.suite,
+			spec 		= arguments.spec
+		);
+
+		// Run the specs
+		specStack();
+
+		return this;
+	}
+
+	/**
+	* Generates a specs stack for executions
+	* @closures The array of closures data to build
+	* @suite The target suite
+	* @spec The target spec
+	*/
+	function generateAroundEachClosuresStack( array closures, required suite, required spec ) {
+
+		thread.closures = arguments.closures;
+		thread.suite 	= arguments.suite;
+		thread.spec 	= arguments.spec;
+
+		// Get closure data from stack and pop it
+		var nextClosure = thread.closures[ 1 ];
+		arrayDeleteAt( thread.closures, 1 );
+
+		// Check if we have more in the stack or empty
+		if( arrayLen( thread.closures ) == 0 ){
+			// Return the closure of execution for a single spec ONLY
+			return function(){
+				// Execute the body of the spec
+				nextClosure.body( spec = thread.spec, suite = thread.suite );
+			};
+		}
+
+		// Get next Spec in stack
+		var nextSpecInfo = thread.closures[ 1 ];
+		// Return generated closure
+		return function() {
+			nextClosure.body(
+				{
+					name = nextSpecInfo.name,
+					body = generateAroundEachClosuresStack(
+						thread.closures,
+						thread.suite,
+						thread.spec
+					),
+					data = nextSpecInfo.data,
+					labels = nextSpecInfo.labels,
+					order = nextSpecInfo.order,
+					skip = nextSpecInfo.skip
+				},
+				thread.suite
+			);
+		};
+	}
+
+	/**
 	* Execute the after each closures in order for a suite and spec
+	* @suite The suite definition
+	* @spec The spec definition
 	*/
 	BaseSpec function runAfterEachClosures( required suite, required spec ){
 		// execute nearest afterEach()
@@ -499,15 +789,26 @@ component{
 			parentSuite.afterEach( currentSpec=arguments.spec.name );
 			parentSuite = parentSuite.parentRef;
 		}
+
+		var annotationMethods = this.$utility.getAnnotatedMethods(
+			annotation = "afterEach",
+			metadata = getMetadata( this )
+		);
+
+		for( var method in annotationMethods ){
+			var afterEachMethod = this[ method.name ];
+			afterEachMethod( currentSpec = arguments.spec.name );
+		}
+
 		return this;
 	}
 
 	/**
 	* Runs a xUnit style test method in this target CFC
-	* @spec.hint The spec definition to test
-	* @testResults.hint The testing results object
-	* @suiteStats.hint The suite stats that the incoming spec definition belongs to
-	* @runner.hint The runner calling this BDD test
+	* @spec The spec definition to test
+	* @testResults The testing results object
+	* @suiteStats The suite stats that the incoming spec definition belongs to
+	* @runner The runner calling this BDD test
 	*/
 	function runTestMethod(
 		required spec,
@@ -529,6 +830,8 @@ component{
 
 				// Reset expected exceptions: Only works on synchronous testing.
 				this.$expectedException = {};
+				// setup the current executing spec for debug purposes
+				this.$currentExecutingSpec = arguments.spec.name;
 
 				// execute setup()
 				if( structKeyExists( this, "setup" ) ){ this.setup( currentMethod=arguments.spec.name ); }
@@ -572,7 +875,8 @@ component{
 			// store spec status and debug data
 			specStats.status 		= "Failed";
 			specStats.failMessage 	= e.message;
-			specStats.failOrigin 	= e.tagContext;
+			specStats.failOrigin 	= sliceTagContext( e.tagContext );
+
 			// Increment recursive pass stats
 			arguments.testResults.incrementSpecStat( type="fail", stats=specStats );
 		}
@@ -581,6 +885,7 @@ component{
 			// store spec status and debug data
 			specStats.status 		= "Error";
 			specStats.error 		= e;
+			specStats.failOrigin 	= sliceTagContext( e.tagContext );
 			// Increment recursive pass stats
 			arguments.testResults.incrementSpecStat( type="error", stats=specStats );
 		} finally {
@@ -595,8 +900,8 @@ component{
 
 	/**
 	* Send some information to the console via writedump( output="console" )
-	* @var.hint The data to send
-	* @top.hint Apply a top to the dump, by default it does 9999 levels
+	* @var The data to send
+	* @top Apply a top to the dump, by default it does 9999 levels
 	*/
 	any function console( required var, top=9999 ){
 		writedump( var=arguments.var, output="console", top=arguments.top );
@@ -605,14 +910,33 @@ component{
 
 	/**
 	* Debug some information into the TestBox debugger array buffer
-	* @var.hint The data to send
-	* @deepCopy.hint By default we do not duplicate the incoming information, but you can :)
+	* @var The data to debug
+	* @label The label to add to the debug entry
+	* @deepCopy By default we do not duplicate the incoming information, but you can :)
+	* @top The top numeric number to dump on the screen in the report, defaults to 999
 	*/
-	any function debug( var, boolean deepCopy=false ){
+	any function debug(
+		any var,
+		string label="",
+		boolean deepCopy=false,
+		numeric top="999"
+	){
+		// null check
 		if( isNull( arguments.var ) ){ arrayAppend( this.$debugBuffer, "null" ); return; }
+		// lock and add
 		lock name="tb-debug-#this.$testID#" type="exclusive" timeout="10"{
+			// duplication control
 			var newVar = ( arguments.deepCopy ? duplicate( arguments.var ) : arguments.var );
-			arrayAppend( this.$debugBuffer, newVar );
+			// compute label?
+			if( !len( trim( arguments.label ) ) ){ arguments.label = this.$currentExecutingSpec; }
+			// add to debug output
+			arrayAppend( this.$debugBuffer, {
+				data=newVar,
+				label=arguments.label,
+				timestamp=now(),
+				thread=( isNull( cfthread ) ? structNew() : cfthread ),
+				top=arguments.top
+			} );
 		}
 		return this;
 	}
@@ -655,9 +979,9 @@ component{
 
 	/**
 	* Make a private method on a CFC public with or without a new name and returns the target object
-	* @target.hint The target object to expose the method
-	* @method.hint The private method to expose
-	* @newName.hint If passed, it will expose the method with this name, else just uses the same name
+	* @target The target object to expose the method
+	* @method The private method to expose
+	* @newName If passed, it will expose the method with this name, else just uses the same name
 	*/
 	any function makePublic( required any target, required string method, string newName="" ){
 
@@ -671,10 +995,10 @@ component{
 
 	/**
 	* Get a private property
-	* @target.hint The target to get a property from
-	* @name.hint The name of the property to retrieve
-	* @scope.hint The scope to get it from, defaults to 'variables' scope
-	* @defaultValue.hint A default value if the property does not exist
+	* @target The target to get a property from
+	* @name The name of the property to retrieve
+	* @scope The scope to get it from, defaults to 'variables' scope
+	* @defaultValue A default value if the property does not exist
 	*/
 	any function getProperty( required target, required name, scope="variables", defaultValue ){
 		// stupid cf10 parser
@@ -691,7 +1015,7 @@ component{
 
 	/**
 	* Get a reference to the MockBox engine
-	* @generationPath.hint The path to generate the mocks if passed, else uses default location.
+	* @generationPath The path to generate the mocks if passed, else uses default location.
 	*/
 	function getMockBox( string generationPath ){
 		if( structKeyExists( arguments, "generationPath" ) ){
@@ -702,9 +1026,9 @@ component{
 
 	/**
 	* Create an empty mock
-	* @className.hint The class name of the object to mock. The mock factory will instantiate it for you
-	* @object.hint The object to mock, already instantiated
-	* @callLogging.hint Add method call logging for all mocked methods. Defaults to true
+	* @className The class name of the object to mock. The mock factory will instantiate it for you
+	* @object The object to mock, already instantiated
+	* @callLogging Add method call logging for all mocked methods. Defaults to true
 	*/
 	function createEmptyMock(
 		string className,
@@ -716,10 +1040,10 @@ component{
 
 	/**
 	* Create a mock with or without clearing implementations, usually not clearing means you want to build object spies
-	* @className.hint The class name of the object to mock. The mock factory will instantiate it for you
-	* @object.hint The object to mock, already instantiated
-	* @clearMethods.hint If true, all methods in the target mock object will be removed. You can then mock only the methods that you want to mock. Defaults to false
-	* @callLogging.hint Add method call logging for all mocked methods. Defaults to true
+	* @className The class name of the object to mock. The mock factory will instantiate it for you
+	* @object The object to mock, already instantiated
+	* @clearMethods If true, all methods in the target mock object will be removed. You can then mock only the methods that you want to mock. Defaults to false
+	* @callLogging Add method call logging for all mocked methods. Defaults to true
 	*/
 	function createMock(
 		string className,
@@ -732,8 +1056,8 @@ component{
 
 	/**
 	* Prepares an already instantiated object to act as a mock for spying and much more
-	* @object.hint The object to mock, already instantiated
-	* @callLogging.hint Add method call logging for all mocked methods. Defaults to true
+	* @object The object to mock, already instantiated
+	* @callLogging Add method call logging for all mocked methods. Defaults to true
 	*/
 	function prepareMock(
 		any object,
@@ -744,9 +1068,9 @@ component{
 
 	/**
 	* Create an empty stub object that you can use for mocking
-	* @callLogging.hint Add method call logging for all mocked methods. Defaults to true
-	* @extends.hint Make the stub extend from certain CFC
-	* @implements.hint Make the stub adhere to an interface
+	* @callLogging Add method call logging for all mocked methods. Defaults to true
+	* @extends Make the stub extend from certain CFC
+	* @implements Make the stub adhere to an interface
 	*/
 	function createStub(
 		boolean callLogging=true,
@@ -758,6 +1082,9 @@ component{
 
 	// Closure Stub
 	function closureStub(){}
+
+	// Around Stub
+	function aroundStub(spec) { spec.body(spec.data); }
 
 	/**
 	* Check if an expected exception is defined
@@ -805,4 +1132,36 @@ component{
 
 		return results;
 	}
+
+
+	/**
+	* removes the TestBox tag contexts from the beginning of the Failure Origin
+	* @tagContext The tag context
+	*/
+	private function sliceTagContext( required tagContext ){
+		var result 			= arguments.tagContext;
+		var testcasePath 	= getDirectoryFromPath( getCurrentTemplatePath() );
+		var ix 				= 1;
+
+		for( var tc in arguments.tagContext ){
+
+			if( find( testcasePath, tc.template ) == 1 ){
+				break;
+			}
+
+			ix++;
+		}
+		// if found, then slice
+		if (ix > 1) {
+			result 	= [];
+			var len = arrayLen( arguments.tagContext );
+
+			while ( ix < len ) {
+				arrayAppend( result, arguments.tagContext[ ix++ ] );
+			}
+		}
+		
+		return result;
+	}
+
 }

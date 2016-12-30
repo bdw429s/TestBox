@@ -1,8 +1,7 @@
 /**
-********************************************************************************
-Copyright 2005-2009 ColdBox Framework by Luis Majano and Ortus Solutions, Corp
-www.coldbox.org | www.luismajano.com | www.ortussolutions.com
-********************************************************************************
+* Copyright Since 2005 TestBox Framework by Luis Majano and Ortus Solutions, Corp
+* www.ortussolutions.com
+* ---
 * A JUnit reporter for use with the ANT junitreport task, which uses an old version of JUnit formatting.
 */
 component{
@@ -145,8 +144,8 @@ component{
 
 		genPropsFromCollection( out, server.coldfusion );
 		genPropsFromCollection( out, server.os );
-		if( structKeyExists( server, "railo" ) ){
-			genPropsFromCollection( out, server.railo );
+		if( structKeyExists( server, "lucee" ) ){
+			genPropsFromCollection( out, server.lucee );
 		}
 		genPropsFromCollection( out, cgi );
 

@@ -1,8 +1,7 @@
 /**
-********************************************************************************
-Copyright 2005-2009 ColdBox Framework by Luis Majano and Ortus Solutions, Corp
-www.coldbox.org | www.luismajano.com | www.ortussolutions.com
-********************************************************************************
+* Copyright Since 2005 TestBox Framework by Luis Majano and Ortus Solutions, Corp
+* www.ortussolutions.com
+* ---
 * Welcome to the next generation of BDD and xUnit testing for CFML applications
 * The TestBox core class allows you to execute all kinds of test bundles, directories and more.
 */
@@ -22,27 +21,29 @@ component accessors="true"{
 	property name="reporter";
 	// The configuration options attached to this runner
 	property name="options";
-    // Last TestResult in case runner wants to inspect it
-    property name="result";
+	// Last TestResult in case runner wants to inspect it
+	property name="result";
 
 	/**
 	* Constructor
-	* @bundles.hint The path, list of paths or array of paths of the spec bundle CFCs to run and test
-	* @directory.hint The directory to test which can be a simple mapping path or a struct with the following options: [ mapping = the path to the directory using dot notation (myapp.testing.specs), recurse = boolean, filter = closure that receives the path of the CFC found, it must return true to process or false to continue process ]
-	* @reporter.hint The type of reporter to use for the results, by default is uses our 'simple' report. You can pass in a core reporter string type or an instance of a testbox.system.reports.IReporter
-	* @labels.hint The list or array of labels that a suite or spec must have in order to execute.
-	* @options.hint A structure of configuration options that are optionally used to configure a runner.
+	* @bundles The path, list of paths or array of paths of the spec bundle CFCs to run and test
+	* @directory The directory to test which can be a simple mapping path or a struct with the following options: [ mapping = the path to the directory using dot notation (myapp.testing.specs), recurse = boolean, filter = closure that receives the path of the CFC found, it must return true to process or false to continue process ]
+	* @directories  Same as @directory, but accepts an array or list
+	* @reporter The type of reporter to use for the results, by default is uses our 'simple' report. You can pass in a core reporter string type or an instance of a testbox.system.reports.IReporter
+	* @labels The list or array of labels that a suite or spec must have in order to execute.
+	* @options A structure of configuration options that are optionally used to configure a runner.
 	*/
 	any function init(
 		any bundles=[],
 		any directory={},
+		any directories={},
 		any reporter="simple",
 		any labels=[],
 		struct options={}
 	){
 
 		// TestBox version
-		variables.version 	= "2.0.0.@build.number@";
+		variables.version 	= "@build.version@+@build.number@";
 		variables.codename 	= "";
 		// init util
 		variables.utility = new testbox.system.util.Util();
@@ -51,33 +52,79 @@ component accessors="true"{
 		variables.reporter = arguments.reporter;
 		// options
 		variables.options = arguments.options;
-
-		// inflate directory?
-		if( isSimpleValue( arguments.directory ) ){ arguments.directory = { mapping=arguments.directory, recurse=true }; }
-		// directory passed?
-		if( !structIsEmpty( arguments.directory ) ){
-			arguments.bundles = getSpecPaths( arguments.directory );
-		}
+		// Empty bundles to start
+		variables.bundles = [];
 
 		// inflate labels
 		inflateLabels( arguments.labels );
-		// inflate bundles to array
-		inflateBundles( arguments.bundles );
+		// add bundles
+		addBundles( arguments.bundles );
+		// Add directory given (if any)
+		addDirectory( arguments.directory );
+		// Add directory given (if any)
+		addDirectories( arguments.directories );
 
+		return this;
+	}
+
+	/**
+	* Constructor
+	* @directory A directory to test which can be a simple mapping path or a struct with the following options: [ mapping = the path to the directory using dot notation (myapp.testing.specs), recurse = boolean, filter = closure that receives the path of the CFC found, it must return true to process or false to continue process ]
+	*/
+	any function addDirectory( required any directory, boolean recurse=true ) {
+		// inflate directory?
+		if( isSimpleValue( arguments.directory ) ) { 
+			arguments.directory = { mapping=arguments.directory, recurse=arguments.recurse }; 
+		}
+		// directory passed?
+		if( !structIsEmpty( arguments.directory ) ){
+			for( var bundle in getSpecPaths( arguments.directory ) ){
+				arrayAppend( variables.bundles, bundle );
+			}
+		}
+		return this;
+	}
+
+	/**
+	* Constructor
+	* @directories A set of directories to test which can be a list of simple mapping paths or an array of structs with the following options: [ mapping = the path to the directory using dot notation (myapp.testing.specs), recurse = boolean, filter = closure that receives the path of the CFC found, it must return true to process or false to continue process ]
+	*/
+	any function addDirectories( required any directories, boolean recurse=true ){
+		if( isSimpleValue( arguments.directories ) ){ 
+			arguments.directories = listToArray( arguments.directories ); 
+		}
+		for( var dir in arguments.directories ) {
+			addDirectory( dir, arguments.recurse );
+		}
+		return this;
+	}
+
+	/**
+	* Constructor
+	* @directory A directory to test which can be a simple mapping path or a struct with the following options: [ mapping = the path to the directory using dot notation (myapp.testing.specs), recurse = boolean, filter = closure that receives the path of the CFC found, it must return true to process or false to continue process ]
+	*/
+	any function addBundles(required any bundles) {
+		if( isSimpleValue( arguments.bundles ) ){ 
+			arguments.bundles = listToArray( arguments.bundles ); 
+		}
+		for( var bundle in arguments.bundles ){
+			arrayAppend( variables.bundles, bundle );
+		}
 		return this;
 	}
 
 	/**
 	* Run me some testing goodness, this can use the constructed object variables or the ones
 	* you can send right here.
-	* @bundles.hint The path, list of paths or array of paths of the spec bundle CFCs to run and test
-	* @directory.hint The directory to test which can be a simple mapping path or a struct with the following options: [ mapping = the path to the directory using dot notation (myapp.testing.specs), recurse = boolean, filter = closure that receives the path of the CFC found, it must return true to process or false to continue process ]
-	* @reporter.hint The type of reporter to use for the results, by default is uses our 'simple' report. You can pass in a core reporter string type or an instance of a testbox.system.reports.IReporter. You can also pass a struct if the reporter requires options: {type="", options={}}
-	* @labels.hint The list or array of labels that a suite or spec must have in order to execute.
-	* @options.hint A structure of configuration options that are optionally used to configure a runner.
-	* @testBundles.hint A list or array of bundle names that are the ones that will be executed ONLY!
-	* @testSuites.hint A list or array of suite names that are the ones that will be executed ONLY!
-	* @testSpecs.hint A list or array of test names that are the ones that will be executed ONLY!
+	* @bundles The path, list of paths or array of paths of the spec bundle CFCs to run and test
+	* @directory The directory to test which can be a simple mapping path or a struct with the following options: [ mapping = the path to the directory using dot notation (myapp.testing.specs), recurse = boolean, filter = closure that receives the path of the CFC found, it must return true to process or false to continue process ]
+	* @reporter The type of reporter to use for the results, by default is uses our 'simple' report. You can pass in a core reporter string type or an instance of a testbox.system.reports.IReporter. You can also pass a struct if the reporter requires options: {type="", options={}}
+	* @labels The list or array of labels that a suite or spec must have in order to execute.
+	* @options A structure of configuration options that are optionally used to configure a runner.
+	* @testBundles A list or array of bundle names that are the ones that will be executed ONLY!
+	* @testSuites A list or array of suite names that are the ones that will be executed ONLY!
+	* @testSpecs A list or array of test names that are the ones that will be executed ONLY!
+	* @callbacks A struct of listener callbacks or a CFC with callbacks for listening to progress of the testing: onBundleStart,onBundleEnd,onSuiteStart,onSuiteEnd,onSpecStart,onSpecEnd
 	*/
 	any function run(
 		any bundles,
@@ -87,28 +134,30 @@ component accessors="true"{
 		struct options,
 		any testBundles=[],
 		any testSuites=[],
-		any testSpecs=[]
+		any testSpecs=[],
+		any callbacks={}
 	){
 
 		// reporter passed?
-		if( structKeyExists( arguments, "reporter" ) ){ variables.reporter = arguments.reporter; }
+		if( !isNull( arguments.reporter ) ){ variables.reporter = arguments.reporter; }
 		// run it and get results
 		var results = runRaw( argumentCollection=arguments );
 		// store latest results
-        variables.result = results;
-        // return report
+		variables.result = results;
+		// return report
 		return produceReport( results );
 	}
 
 	/**
 	* Run me some testing goodness but give you back the raw TestResults object instead of a report
-	* @bundles.hint The path, list of paths or array of paths of the spec bundle CFCs to run and test
-	* @directory.hint The directory to test which can be a simple mapping path or a struct with the following options: [ mapping = the path to the directory using dot notation (myapp.testing.specs), recurse = boolean, filter = closure that receives the path of the CFC found, it must return true to process or false to continue process ]
-	* @labels.hint The list or array of labels that a suite or spec must have in order to execute.
-	* @options.hint A structure of configuration options that are optionally used to configure a runner.
-	* @testBundles.hint A list or array of bundle names that are the ones that will be executed ONLY!
-	* @testSuites.hint A list or array of suite names that are the ones that will be executed ONLY!
-	* @testSpecs.hint A list or array of test names that are the ones that will be executed ONLY!
+	* @bundles The path, list of paths or array of paths of the spec bundle CFCs to run and test
+	* @directory The directory to test which can be a simple mapping path or a struct with the following options: [ mapping = the path to the directory using dot notation (myapp.testing.specs), recurse = boolean, filter = closure that receives the path of the CFC found, it must return true to process or false to continue process ]
+	* @labels The list or array of labels that a suite or spec must have in order to execute.
+	* @options A structure of configuration options that are optionally used to configure a runner.
+	* @testBundles A list or array of bundle names that are the ones that will be executed ONLY!
+	* @testSuites A list or array of suite names that are the ones that will be executed ONLY!
+	* @testSpecs A list or array of test names that are the ones that will be executed ONLY!
+	* @callbacks A struct of listener callbacks or a CFC with callbacks for listening to progress of the testing: onBundleStart,onBundleEnd,onSuiteStart,onSuiteEnd,onSpecStart,onSpecEnd
 	*/
 	testbox.system.TestResult function runRaw(
 		any bundles,
@@ -117,41 +166,42 @@ component accessors="true"{
 		struct options,
 		any testBundles=[],
 		any testSuites=[],
-		any testSpecs=[]
+		any testSpecs=[],
+		any callbacks={}
 	){
 
 		// inflate options if passed
-		if( structKeyExists( arguments, "options" ) ){ variables.options = arguments.options; }
+		if( !isNull( arguments.options ) ){ variables.options = arguments.options; }
 		// inflate directory?
-		if( structKeyExists( arguments, "directory" ) && isSimpleValue( arguments.directory ) ){ arguments.directory = { mapping=arguments.directory, recurse=true }; }
+		if( !isNull( arguments.directory ) && isSimpleValue( arguments.directory ) ){ arguments.directory = { mapping=arguments.directory, recurse=true }; }
 		// inflate test bundles, suites and specs from incoming variables.
 		arguments.testBundles 	= ( isSimpleValue( arguments.testBundles ) ? listToArray( arguments.testBundles ) : arguments.testBundles );
 		arguments.testSuites 	= ( isSimpleValue( arguments.testSuites ) ? listToArray( arguments.testSuites ) : arguments.testSuites );
 		arguments.testSpecs 	= ( isSimpleValue( arguments.testSpecs ) ? listToArray( arguments.testSpecs ) : arguments.testSpecs );
 
 		// Verify URL conventions for bundle, suites and specs exclusions.
-		if( structKeyExists( url, "testBundles") ){
+		if( !isNull( url.testBundles) ){
 			testBundles.addAll( listToArray( url.testBundles ) );
 		}
-		if( structKeyExists( url, "testSuites") ){
+		if( !isNull( url.testSuites) ){
 			arguments.testSuites.addAll( listToArray( url.testSuites ) );
 		}
-		if( structKeyExists( url, "testSpecs") ){
+		if( !isNull( url.testSpecs) ){
 			arguments.testSpecs.addAll( listToArray( url.testSpecs ) );
 		}
-		if( structKeyExists( url, "testMethod") ){
+		if( !isNull( url.testMethod) ){
 			arguments.testSpecs.addAll( listToArray( url.testMethod ) );
 		}
 
 		// Using a directory runner?
-		if( structKeyExists( arguments, "directory" ) && !structIsEmpty( arguments.directory ) ){
+		if( !isNull( arguments.directory ) && !structIsEmpty( arguments.directory ) ){
 			arguments.bundles = getSpecPaths( arguments.directory );
 		}
 
 		// Inflate labels if passed
-		if( structKeyExists( arguments, "labels" ) ){ inflateLabels( arguments.labels ); }
+		if( !isNull( arguments.labels ) ){ inflateLabels( arguments.labels ); }
 		// If bundles passed, inflate those as the target
-		if( structKeyExists( arguments, "bundles" ) ){ inflateBundles( arguments.bundles ); }
+		if( !isNull( arguments.bundles ) ){ inflateBundles( arguments.bundles ); }
 
 		// create results object
 		var results = new testbox.system.TestResult( bundleCount=arrayLen( variables.bundles ),
@@ -162,7 +212,8 @@ component accessors="true"{
 
 		// iterate and run the test bundles
 		for( var thisBundlePath in variables.bundles ){
-			testBundle( thisBundlePath, results );
+			// Execute Bundle
+			testBundle( bundlePath=thisBundlePath, testResults=results, callbacks=arguments.callbacks );
 		}
 
 		// mark end of testing bundles
@@ -175,16 +226,16 @@ component accessors="true"{
 
 	/**
 	* Run me some testing goodness, remotely via SOAP, Flex, REST, URL
-	* @bundles.hint The path or list of paths of the spec bundle CFCs to run and test
-	* @directory.hint The directory mapping to test: directory = the path to the directory using dot notation (myapp.testing.specs)
-	* @recurse.hint Recurse the directory mapping or not, by default it does
-	* @reporter.hint The type of reporter to use for the results, by default is uses our 'simple' report. You can pass in a core reporter string type or a class path to the reporter to use.
-	* @reporterOptions.hint A JSON struct literal of options to pass into the reporter
-	* @labels.hint The list of labels that a suite or spec must have in order to execute.
-	* @options.hint A JSON struct literal of configuration options that are optionally used to configure a runner.
-	* @testBundles.hint A list or array of bundle names that are the ones that will be executed ONLY!
-	* @testSuites.hint A list of suite names that are the ones that will be executed ONLY!
-	* @testSpecs.hint A list of test names that are the ones that will be executed ONLY!
+	* @bundles The path or list of paths of the spec bundle CFCs to run and test
+	* @directory The directory mapping to test: directory = the path to the directory using dot notation (myapp.testing.specs)
+	* @recurse Recurse the directory mapping or not, by default it does
+	* @reporter The type of reporter to use for the results, by default is uses our 'simple' report. You can pass in a core reporter string type or a class path to the reporter to use.
+	* @reporterOptions A JSON struct literal of options to pass into the reporter
+	* @labels The list of labels that a suite or spec must have in order to execute.
+	* @options A JSON struct literal of configuration options that are optionally used to configure a runner.
+	* @testBundles A list or array of bundle names that are the ones that will be executed ONLY!
+	* @testSuites A list of suite names that are the ones that will be executed ONLY!
+	* @testSpecs A list of test names that are the ones that will be executed ONLY!
 	*/
 	remote function runRemote(
 		string bundles,
@@ -208,7 +259,7 @@ component accessors="true"{
 		arguments.testSpecs 	= listToArray( arguments.testSpecs );
 
 		// options inflate from JSON
-		if( structKeyExists( arguments, "options" ) and isJSON( arguments.options ) ){
+		if( !isNull( arguments.options ) and isJSON( arguments.options ) ){
 			arguments.options = deserializeJSON( arguments.options );
 		}
 		else{
@@ -216,12 +267,12 @@ component accessors="true"{
 		}
 
 		// Inflate directory?
-		if( structKeyExists( arguments, "directory" ) and len( arguments.directory ) ){
+		if( !isNull( arguments.directory ) and len( arguments.directory ) ){
 			arguments.directory = { mapping = arguments.directory, recurse = arguments.recurse };
 		}
 
 		// reporter options inflate from JSON
-		if( structKeyExists( arguments, "reporterOptions" ) and isJSON( arguments.reporterOptions ) ){
+		if( !isNull( arguments.reporterOptions ) and isJSON( arguments.reporterOptions ) ){
 			arguments.reporterOptions = deserializeJSON( arguments.reporterOptions );
 		}
 		else{
@@ -229,7 +280,7 @@ component accessors="true"{
 		}
 
 		// setup reporter
-		if( structKeyExists( arguments, "reporter" ) and len( arguments.reporter ) ){
+		if( !isNull( arguments.reporter ) and len( arguments.reporter ) ){
 			variables.reporter = { type = arguments.reporter, options = arguments.reporterOptions };
 		}
 
@@ -266,8 +317,8 @@ component accessors="true"{
 			response.addHeader( "x-testbox-totalError", javaCast( "string", results.getTotalError() ) );
 			response.addHeader( "x-testbox-totalSkipped", javaCast( "string", results.getTotalSkipped() ) );
 		} catch( Any e ){
-			writeLog( type="error", 
-					  text="Error sending TestBox headers: #e.message# #e.detail# #e.stackTrace#", 
+			writeLog( type="error",
+					  text="Error sending TestBox headers: #e.message# #e.detail# #e.stackTrace#",
 					  file="testbox.log" );
 		}
 
@@ -278,7 +329,7 @@ component accessors="true"{
 
 	/**
 	* Build a report according to this runner's setup reporter, which can be anything.
-	* @results.hint The results object to use to produce a report
+	* @results The results object to use to produce a report
 	*/
 	private any function produceReport( required results ){
 		var iData = { type="", options={} };
@@ -287,14 +338,12 @@ component accessors="true"{
 		if( isSimpleValue( variables.reporter ) ){
 			iData = { type=buildReporter( variables.reporter ), options={} };
 		}
-
 		// If the incoming reporter is an object.
-		if( isObject( variables.reporter ) ){
+		else if ( isObject( variables.reporter ) ){
 			iData = { type=variables.reporter, options={} };
 		}
-
 		// Do we have reporter type and options
-		if( isStruct( variables.reporter ) ){
+		else if ( isStruct( variables.reporter ) ){
 			iData.type = buildReporter( variables.reporter.type );
 			if( structKeyExists( variables.reporter, "options" ) ){
 				iData.options = variables.reporter.options;
@@ -306,7 +355,7 @@ component accessors="true"{
 
 	/**
 	* Build a reporter according to passed in reporter type or class path
-	* @reporter.hint The reporter type to build.
+	* @reporter The reporter type to build.
 	*/
 	private any function buildReporter( required reporter ){
 
@@ -321,6 +370,7 @@ component accessors="true"{
 			case "antjunit" : { return new "testbox.system.reports.ANTJUnitReporter"(); }
 			case "console" : { return new "testbox.system.reports.ConsoleReporter"(); }
 			case "min" : { return new "testbox.system.reports.MinReporter"(); }
+			case "mintext" : { return new "testbox.system.reports.MinTextReporter"(); }
 			case "tap" : { return new "testbox.system.reports.TapReporter"(); }
 			case "doc" : { return new "testbox.system.reports.DocReporter"(); }
 			case "codexwiki" : { return new "testbox.system.reports.CodexWikiReporter"(); }
@@ -334,38 +384,50 @@ component accessors="true"{
 
 	/**
 	* This method executes the tests in a bundle CFC according to type
-	* @bundlePath.hint The path of the Bundle CFC to test.
-	* @testResults.hint The testing results object to keep track of results
+	* @bundlePath The path of the Bundle CFC to test.
+	* @testResults The testing results object to keep track of results
+	* @callbacks The callbacks struct or CFC
 	*/
 	private function testBundle(
 		required bundlePath,
-		required testResults
+		required testResults,
+		required callbacks
 	){
 
 		// create new target bundle and get its metadata
 		var target = getBundle( arguments.bundlePath );
 
+		// verify call backs
+		if( structKeyExists( arguments.callbacks, "onBundleStart" ) ){
+			arguments.callbacks.onBundleStart( target, testResults );
+		}
+
 		// Discover type?
 		if( structKeyExists( target, "run" ) ){
 			// Run via BDD Style
-			new testbox.system.runners.BDDRunner( options=variables.options )
-				.run( target, arguments.testResults );
+			new testbox.system.runners.BDDRunner( options=variables.options, testbox=this )
+				.run( target, arguments.testResults, arguments.callbacks );
 		}
 		else{
 			// Run via xUnit Style
-			new testbox.system.runners.UnitRunner( options=variables.options )
-				.run( target, arguments.testResults );
+			new testbox.system.runners.UnitRunner( options=variables.options,testbox=this )
+				.run( target, arguments.testResults, arguments.callbacks );
 		}
 
 		// Store debug buffer for this bundle
 		arguments.testResults.storeDebugBuffer( target.getDebugBuffer() );
+
+		// verify call backs
+		if( structKeyExists( arguments.callbacks, "onBundleEnd" ) ){
+			arguments.callbacks.onBundleEnd( target, testResults );
+		}
 
 		return this;
 	}
 
 	/**
 	* Creates and returns a bundle CFC with spec capabilities if not inherited.
-	* @bundlePath.hint The path to the Bundle CFC
+	* @bundlePath The path to the Bundle CFC
 	*/
 	private any function getBundle( required bundlePath ){
 		var bundle		= createObject( "component", "#arguments.bundlePath#" );
@@ -399,7 +461,7 @@ component accessors="true"{
 
 	/**
 	* Get an array of spec paths from a directory
-	* @directory.hint The directory information struct to test: [ mapping = the path to the directory using dot notation (myapp.testing.specs), recurse = boolean, filter = closure that receives the path of the CFC found, it must return true to process or false to continue process ]
+	* @directory The directory information struct to test: [ mapping = the path to the directory using dot notation (myapp.testing.specs), recurse = boolean, filter = closure that receives the path of the CFC found, it must return true to process or false to continue process ]
 	*/
 	private function getSpecPaths( required directory ){
 		var results = [];
